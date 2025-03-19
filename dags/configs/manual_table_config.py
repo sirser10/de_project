@@ -1,9 +1,7 @@
 MANUAL_TABLE_PK = \
 {
-    'src.manual_bu_struc': ['id'],
     'src.manual_dim_groups': ['group_id'],
     'src.manual_employees': ['id'],
-    'src.manual_intranet_metrics_subscribes_202412111758': ['blog_id', 'bu_id']
 }
 
 """
@@ -54,27 +52,42 @@ MANUAL_TABLE_STG_CFG = {k.split('.')[1]: v for k, v in total_tab_col_dct.items()
 
 ODS_TABLES_CFG = \
 {
-    'manual_bu_struc': {
+    'manual_dim_groups': {
         'columns':[
-            'row_id TEXT',
-            'id INT',
-            'financier_user TEXT',
-            'type VARCHAR',
-            'name VARCHAR',
-            'parent_type VARCHAR',
-            'parentid VARCHAR',
-            'manager_user VARCHAR',
-            'upd_dtime TIMESTAMP'
+            'group_id INT',
+            'group_name TEXT',
+            'dt_start DATE',
+            'dt_end DATE',
+            'updated_dttm TIMESTAMP',
         ],
-        'unique_constraints':['CONSTRAINT manual_bu_struc_pk PRIMARY KEY (id)'],
+        'unique_constraints':['CONSTRAINT manual_dim_groups_pk PRIMARY KEY (group_id)'],
         'columns_to_upsert': [
-                                'id',
-                                'financier_user',
-                                'type',
-                                'name',
-                                'parent_type',
-                                'parentid',
-                                'manager_user'
+                            'group_id',
+                            'group_name',
+                            'dt_start',
+                            'dt_end',
                             ]
     },
+    'manual_employees':{
+        'columns':[
+            'id INT',
+            'email TEXT',
+            'name TEXT',
+            'surname TEXT',
+            'patronymic TEXT',
+            'org_unit INT',
+            'position INT',
+            'updated_dttm TIMESTAMP',
+        ],
+        'unique_constraints':['CONSTRAINT manual_employees_pk PRIMARY KEY (id)'],
+        'columns_to_upsert': [
+                                'id',
+                                'email',
+                                'name',
+                                'surname',
+                                'patronymic',
+                                'org_unit',
+                                'position',
+                            ]
+    }
 }
