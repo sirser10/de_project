@@ -5,6 +5,7 @@ from airflow.models.baseoperator import BaseOperator
 from typing import Dict, Any, Tuple 
 from io import StringIO 
 from pandas import DataFrame
+from numpy import ndarray
 
 
 import logging
@@ -14,6 +15,7 @@ import csv
 import logging
 import chardet
 import pandas as pd
+import re 
 
 log = logging.getLogger(__name__)
 
@@ -72,20 +74,18 @@ class CustomFilesOperator(BaseOperator):
 
         if len(csv_files_lst) > 0:
             for csv_ in csv_files_lst:
+                log.info(f"Processing of {csv_.split('/')[-1]}...")
                 df: DataFrame = self.normilized_csv_to_df(csv_)
                 df_csv, pg_columns = self.df_base_operator(
                                                         df=df,
                                                         metadata_columns=self.common_helper.get_metadata_columns(s3_obj_path=csv_, context=self.dag_context),
                                                         file_name=csv_,
                                                         rename_col_mapping=rename_col_mapping
-                                                        )                
-                if file_name_mapping:
-                    proper_csv_file_name: str = self.common_helper.get_file_name_from_config(csv_, file_name_mapping)
-                    log.info(f'New propper file name - {proper_csv_file_name}')
-                else:
-                    proper_csv_file_name: str = self.common_helper.get_file_name_wo_ext(csv_)
-                    log.info(f'File name - {proper_csv_file_name}')
+                                                        )         
                 
+                proper_csv_file_name: str = self.common_helper.get_file_name_from_config(csv_, file_name_mapping) if file_name_mapping else self.common_helper.get_file_name_wo_ext(csv_)
+                log.info(f'New propper file name - {proper_csv_file_name}')
+
                 src_processor(
                             pg_hook_con=pg_hook_con,
                             source_obj=df_csv,
@@ -107,12 +107,8 @@ class CustomFilesOperator(BaseOperator):
                                                             file_name=xlsx_,
                                                             rename_col_mapping=rename_col_mapping
                                                             )
-                if file_name_mapping:
-                    proper_xlsx_file_name: str = self.common_helper.get_file_name_from_config(xlsx_, file_name_mapping)
-                    log.info(f'New propper file name - {proper_xlsx_file_name}')
-                else:
-                    proper_xlsx_file_name: str = self.common_helper.get_file_name_wo_ext(xlsx_)
-                    log.info(f'File name - {proper_xlsx_file_name}')
+                proper_xlsx_file_name: str = self.common_helper.get_file_name_from_config(xlsx_, file_name_mapping) if file_name_mapping else self.common_helper.get_file_name_wo_ext(xlsx_)
+                log.info(f'New propper file name - {proper_xlsx_file_name}')
 
                 src_processor(
                             pg_hook_con=pg_hook_con,
@@ -175,43 +171,57 @@ class CustomFilesOperator(BaseOperator):
         else:
             df
         return df
-    
-    def normilized_csv_to_df(self, csv_path: str) -> DataFrame:
+
+
+    def normilized_csv_to_df(self, csv_path: str) -> None:
+
+        def get_col_types_as_dct(df: DataFrame) -> dict:
+            return df.dtypes.astype(str).to_dict()
+        
+        def float_to_int_col_values_converter(df: DataFrame, col_name: str) -> DataFrame:
+
+            uniq_notnull_vals: ndarray = df[col_name].loc[~df[col_name].isnull()].unique()
+            uniq_notnull_vals_lst = [str(val) for val in uniq_notnull_vals]
+            
+            if all(re.search('^\d+\.0$', val) for val in uniq_notnull_vals_lst):
+                df[col_name] = df[col_name].apply(lambda x: str(x).split('.')[0] if pd.notnull(x) else x).astype('Int64')                
 
         try:
-                log.info('Layunched csv normalizer processor...')
-                if isinstance(csv_path, str):
-                    log.info('CSV file has been found')
+            log.info('Layunched csv normalizer processor...')
+            if isinstance(csv_path, str):
+                log.info('CSV file has been found')
 
-                    csv_file = csv.reader(open(csv_path,mode='r')) # same as "with open(csv_file, mode='r') as f:"
-                    first_five_rows = [next(csv_file) for row in range(6)] #only 5 rows read, not an entire file
-                    csv_string: str = "\n".join([",".join(row) for row in first_five_rows])
+                csv_file = csv.reader(open(csv_path,mode='r')) # same as "with open(csv_file, mode='r') as f:"
+                first_five_rows = [next(csv_file) for row in range(6)] #only 5 rows read, not an entire file
+                csv_string: str = "\n".join([",".join(row) for row in first_five_rows])
 
-                    string_object: StringIO = StringIO(csv_string)
-                    encoding_res: str = self.encoding_detector(string_object)
-                    
-                    string_object.seek(0)
-                    sep_res: str = self.separator_detector(string_object)
-        
-                    string_object.seek(0)
-                    df_final: DataFrame = pd.read_csv(
-                                                        filepath_or_buffer=string_object,
-                                                        encoding=encoding_res,
-                                                        sep=sep_res,
-                                                    )
-                    log.info(f'Initial cols number: {len(df_final.columns)}')
-
-                    unnamed_cols = [col for col in df_final.columns if 'Unnamed' in col]
-                    if unnamed_cols:
-                        df_final = df_final.drop(unnamed_cols, axis=1)
-                        log.info(f'Dropped columns: {unnamed_cols}')
-                    else:
-                        df_final
-                    log.info(f'Cols number after column were dropped: {len(df_final.columns)}')
-
-                    return df_final
+                string_object: StringIO = StringIO(csv_string)
+                encoding_res: str = self.encoding_detector(string_object)
                 
-                log.info('Csv normalizer processor has ended succesfully...')
+                string_object.seek(0)
+                sep_res: str = self.separator_detector(string_object)
+
+                df_final: DataFrame = pd.read_csv(
+                                                    filepath_or_buffer=csv_path,
+                                                    encoding=encoding_res,
+                                                    sep=sep_res,
+                                                )
+                log.info(f'Initial cols number: {len(df_final.columns)}')
+
+                unnamed_cols = [col for col in df_final.columns if 'Unnamed' in col]
+                df_final.drop(unnamed_cols, axis=1) if unnamed_cols else df_final
+                log.info(f'Dropped columns: {unnamed_cols}')
+                log.info(f'Cols number after column were dropped: {len(df_final.columns)}')
+
+                col_types = get_col_types_as_dct(df_final)
+                for col, _type in col_types.items():
+                    if _type == 'float64':
+                        float_to_int_col_values_converter(df_final,col)
+                log.info(f'Updated column types {df_final.dtypes.astype(str).to_dict()}')
+
+                return df_final
+            
+            log.info('Csv normalizer processor has ended succesfully...')
 
         except Exception as e:
             log.info(f'Error has occured while processing csv files: {e}')
