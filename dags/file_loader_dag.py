@@ -10,6 +10,7 @@ from airflow.utils.task_group import TaskGroup
 from operators.common.file_loader_operator import CustomFilesOperator, FileHashDetector
 from operators.common.pg_operator_one_table import stg_processor, ods_upsert
 from configs.manual_table_config import MANUAL_TABLE_STG_CFG, ODS_TABLES_CFG
+from globals import globals
 
 import logging
 import warnings
@@ -40,17 +41,17 @@ def create_dwh_task(task_id, python_callable, **kwargs) -> PythonOperator:
                             provide_context=True
                             )
 
-default_kwargs=\
-            {
-            'default_args':{'owner':'s.frolkin'},
-            'dag_id':DAG_ID,
-            'description':'Loader of CSV files from HRAN share folder',
-            'schedule_interval':'@once',
-            'start_date': dttm(2024, 12, 23),
-            'tags':['sharefolder','manual files']
-    }
+default_args = globals.DEFAULT_DAG_CONFIG.copy()
+default_args['default_args']['owner'] = 's.frolkin'
 
-with DAG(**default_kwargs):
+with DAG(
+        **globals.DEFAULT_DAG_CONFIG,
+        dag_id=DAG_ID,
+        description='Loader of CSV files from HRAN share folder',
+        schedule_interval='*/30 * * * *',
+        start_date=dttm(2024, 12, 23),
+        tags=['sharefolder','manual files'],
+        ):
 
     start_dag  = DummyOperator(task_id='start_dag')
     end_dag    = DummyOperator(task_id='end_dag')
