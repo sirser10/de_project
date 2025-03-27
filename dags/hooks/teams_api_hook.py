@@ -18,7 +18,7 @@ if IS_ENV_DEV:
     class DEFAULTS:
         conns = {
             'vkteams-api-hran-bot': {
-                'server': 'https://api.internal.teams.ru/bot/v1',
+                'server': 'https://some_api.server.teams.ru/bot/v1',
                 'token': teams.token
             }
         }
