@@ -34,4 +34,3 @@ DEFAULT_DAG_CONFIG = {
     'catchup': False,
     'max_active_runs': 1
 }
-
