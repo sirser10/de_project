@@ -14,7 +14,7 @@ def on_failure_callback(ctx):
     for e in email_list:
         TeamsAPIOperator(
             task_id='send_message',
-            conn_id='teams-api-hran-bot',
+            conn_id='teams-api-bot',
             task_kwargs= {
                 'chat_id': e,
                 'msg_text': msg
