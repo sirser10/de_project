@@ -1,0 +1,39 @@
+default:
+  default_args:
+    email_on_failure: False
+    email_on_retry:  False
+    retries: 0
+    depends_on_past: False
+    on_failure_callback: 
+      callback: globals.globals.on_failure_callback
+  catchup: False
+  max_active_runs: 1  
+
+dds_sap_bu_manager_rls:
+  default_args:
+    start_date: 2025-02-17
+    owner: s.frolkin
+  schedule_interval: '@daily'
+  tags: [sap, rls]
+  tasks:
+    start_dag:
+      operator: airflow.operators.dummy_operator.DummyOperator
+    dds.sap_bu_manager_rls:
+      operator: airflow.operators.python.PythonOperator
+      python_callable_name: sql_script_execution
+      python_callable_file: /opt/airflow/dags/operators/common/pg_operator.py
+      op_kwargs:
+        pg_hook_con: $ENV
+        directory: /opt/airflow/dags/sql/other/
+        schema_folder: dds
+        table_name: sap_bu_manager_rls
+      dependencies: [start_dag]
+    end_dag:
+      operator: airflow.operators.dummy_operator.DummyOperator
+      task_id: end_dag
+      dependencies: 
+        - dds.sap_bu_manager_rls
+
+    
+
+

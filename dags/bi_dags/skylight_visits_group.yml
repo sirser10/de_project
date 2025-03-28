@@ -1,0 +1,54 @@
+default:
+  default_args:
+    email_on_failure: False
+    email_on_retry:  False
+    retries: 0
+    depends_on_past: False
+    on_failure_callback: 
+      callback: globals.globals.on_failure_callback
+  catchup: False
+  max_active_runs: 1
+
+skylight_visits_group:
+  default_args:
+    start_date: 2025-02-21
+    owner: s.frolkin
+  schedule_interval: '30 4 * * *'
+  tags: [skylight, visits, adhoc]
+
+  task_groups:
+    start_task_group:
+        dependencies: [start_dag] #зависимость группы от предыдущей таски
+    end_task_group:
+        dependencies: [start_task_group]
+
+  tasks:
+    start_dag:
+      operator: airflow.operators.dummy_operator.DummyOperator
+    
+    dm.skylight_visits:
+      operator: airflow.operators.python.PythonOperator
+      python_callable_name: sql_script_execution
+      python_callable_file: /opt/airflow/dags/operators/common/pg_operator.py
+      op_kwargs:
+        pg_hook_con: $ENV
+        directory: /opt/airflow/dags/sql/other/
+        schema_folder: dm
+        table_name: skylight_visits
+      task_group_name: start_task_group
+    
+    dm.skylight_visits_detail:
+      operator: airflow.operators.python.PythonOperator
+      python_callable_name: sql_script_execution
+      python_callable_file: /opt/airflow/dags/operators/common/pg_operator.py
+      op_kwargs:
+        pg_hook_con: $ENV
+        directory: /opt/airflow/dags/sql/other/
+        schema_folder: dm
+        table_name: skylight_visits_detail
+      task_group_name: end_task_group
+
+    end_dag:
+      operator: airflow.operators.dummy_operator.DummyOperator
+      task_id: end_dag
+      dependencies: [end_task_group]

@@ -1,0 +1,78 @@
+default:
+  default_args:
+    email_on_failure: False
+    email_on_retry:  False
+    retries: 0
+    depends_on_past: False
+    on_failure_callback: 
+      callback: globals.globals.on_failure_callback
+  catchup: False
+  max_active_runs: 1
+
+test_dag:
+  default_args:
+    start_date: 2025-02-19
+    owner: s.frolkin
+  schedule_interval: '30 4 * * *'
+  tags: [feedback]
+
+  task_groups:
+    task_group_v1:
+        dependencies: [start_dag] 
+    task_group_v2:
+        dependencies: [task_group_v1]
+
+  tasks:
+    start_dag:
+      operator: airflow.operators.dummy_operator.DummyOperator
+
+    stg.feedback_goals_goals:
+      operator: airflow.operators.python.PythonOperator
+      python_callable_name: sql_script_execution
+      python_callable_file: /opt/airflow/dags/operators/common/pg_operator.py
+      op_kwargs:
+        pg_hook_con: $ENV
+        directory: /opt/airflow/dags/sql/feedback/
+        schema_folder: stg
+        table_name: feedback_goals_goals
+      task_group_name: task_group_v1 
+
+    stg.feedback_goals_profiles:
+      operator: airflow.operators.python.PythonOperator
+      python_callable_name: sql_script_execution
+      python_callable_file: /opt/airflow/dags/operators/common/pg_operator.py
+      op_kwargs:
+        pg_hook_con: $ENV
+        directory: /opt/airflow/dags/sql/feedback/
+        schema_folder: stg
+        table_name: feedback_goals_profiles
+      task_group_name: task_group_v1 
+
+    ods.feedback_goals_goals:
+      operator: airflow.operators.python.PythonOperator
+      python_callable_name: sql_script_execution
+      python_callable_file: /opt/airflow/dags/operators/common/pg_operator.py
+      op_kwargs:
+        pg_hook_con: $ENV
+        directory: /opt/airflow/dags/sql/feedback/
+        schema_folder: ods
+        table_name: feedback_goals_goals
+      task_group_name: task_group_v2
+
+    end_dag:
+      operator: airflow.operators.dummy_operator.DummyOperator
+      dependencies: [task_group_v2]
+
+
+
+
+
+
+
+    
+    
+
+    
+  
+    
+
