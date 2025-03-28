@@ -3,12 +3,12 @@ from datetime import datetime as dttm
 
 from airflow import DAG
 from airflow.operators.dummy_operator import DummyOperator
-from airflow.operators.python_operator import PythonOperator, BranchPythonOperator
+from airflow.operators.python_operator import  BranchPythonOperator
 from airflow.models.variable import Variable
 from airflow.utils.task_group import TaskGroup
 
 from operators.common.file_loader_operator import CustomFilesOperator, FileHashDetector
-from operators.common.pg_operator_one_table import stg_processor, ods_upsert
+from operators.common.pg_operator import CustomPGOperator
 from configs.manual_table_config import MANUAL_TABLE_STG_CFG, ODS_TABLES_CFG
 from globals import globals
 
@@ -33,17 +33,6 @@ def decide_next_task(input_task_id: str, next_task_name: str,**kwargs) -> str:
     changes_detected = kwargs['ti'].xcom_pull(task_ids=input_task_id, key='changes_detected')
     return next_task_name if changes_detected else 'end_dag' 
 
-def create_dwh_task(task_id, python_callable, **kwargs) -> PythonOperator:
-    return PythonOperator(
-                            task_id=task_id,
-                            python_callable=python_callable,
-                            op_kwargs=kwargs,
-                            provide_context=True
-                            )
-
-default_args = globals.DEFAULT_DAG_CONFIG.copy()
-default_args['default_args']['owner'] = 's.frolkin'
-
 with DAG(
         **globals.DEFAULT_DAG_CONFIG,
         dag_id=DAG_ID,
@@ -58,13 +47,17 @@ with DAG(
     start_dwh_etl = DummyOperator(task_id='start_dwh_etl')
     end_dwh_etl = DummyOperator(task_id='end_dwh_etl')
 
+    hran_mnt_dir: str            = Variable.get('hran_mnt_dir')
+    manual_files_dir: str        = hran_mnt_dir + '/manual_files/' + 'manual_files_dwh/'
+    manual_file_hashes_path: str = hran_mnt_dir + '/manual_files/' + 'manual_file_hash_logs/' + 'manual_file_hashes.txt'
+
     LOADING_CFG =\
                 {
                     'file_hash_detector_params':{
                         'task_id': 'filehash_change_check',
                         'task_key': 'execute_filehash_change',
-                        'dir_path' : AIRFLOW_HOME + Variable.get('sharefile_dir_path'),
-                        'hash_file_path': AIRFLOW_HOME + Variable.get('filehash_logs_path') + 'hran_file_hashes.txt'
+                        'dir_path' : manual_files_dir,
+                        'hash_file_path': manual_file_hashes_path,
                     },
                     'decide_next_task': {
                                         'task_id':'decide_next_task',
@@ -78,7 +71,7 @@ with DAG(
                     'file_loader_params': {
                                         'task_id':'loading_file_to_dwh',
                                         'task_key':'find_and_load_file_to_db',
-                                        'dir_path' : AIRFLOW_HOME + Variable.get('sharefile_dir_path'),
+                                        'dir_path' : manual_files_dir,
                                         'pg_src_cfg': {
                                                     'pg_hook_con': ENV, 
                                                     'pg_src_info_cfg':{'select_column': '1', 'info_table': 'columns'},
@@ -93,45 +86,42 @@ with DAG(
 
     start_dag >> filehash_check_task >> decide_task >> file_loader_task >> start_dwh_etl
 
-    with TaskGroup(group_id='stg_processor') as stg_processor_:
+    with TaskGroup(group_id='stg_processor') as stg_processor:
         for k, v in MANUAL_TABLE_STG_CFG.items():
             previous_task = None
-            STG_PROCESSOR_CFG =\
-                            {
-                                'python_callable':stg_processor,
-                                'op_kwargs': {
-                                            'pg_hook_con':ENV,
-                                            'schema_from':'src',
-                                            'schema_to':'stg',
-                                            'table_name': k,
-                                            'column_list': v['columns'],
-                                            'columns_to_deduplicate': v['columns_to_deduplicate'],
-                                            'info_tab_conf': {
-                                                            'select_column' : ['table_name','column_name'],
-                                                            'info_table': 'columns'
-                                            } 
-                                }
-                            }
-            task=create_dwh_task(
-                                task_id='stg.'+ k,
-                                python_callable=STG_PROCESSOR_CFG['python_callable'],
-                                **STG_PROCESSOR_CFG['op_kwargs']
-                                )
+            STG_CFG =\
+                {
+                    'task_id': 'stg.' + k,
+                    'task_key':'stg_processor',
+                    'pg_hook_con': ENV,
+                    'stg_cfg': {
+                                'schema_from':'src',
+                                'schema_to':'stg',
+                                'table_name': k,
+                                'column_list': v['columns'],
+                                'columns_to_deduplicate': v['columns_to_deduplicate'],
+                                'info_tab_conf': {
+                                                'select_column' : ['table_name','column_name'],
+                                                'info_table': 'columns'
+                                } 
+                    }
+            }
+            stg_task = CustomPGOperator(**STG_CFG)
             if previous_task:
-                previous_task >> task 
-            previous_task = task
+                previous_task >> stg_task 
+            previous_task = stg_task
             
-        start_dwh_etl >> stg_processor_
+        start_dwh_etl >> stg_processor
 
     with TaskGroup(group_id='ods_processor') as ods_processor:
         for k, v in ODS_TABLES_CFG.items():
             previous_task=None
-
-            ODS_PROCESSOR_CFG =\
+            ODS_CFG =\
                 {
-                    'python_callable':ods_upsert,
-                    'op_kwargs': {
-                                'pg_hook_con':ENV,
+                    'task_id': 'ods.' + k,
+                    'task_key':'ods_processor',
+                    'pg_hook_con':ENV,
+                    'ods_cfg': {
                                 'schema_from':'stg',
                                 'schema_to':'ods',
                                 'table_name': k,
@@ -143,17 +133,12 @@ with DAG(
                                                 'info_table': 'columns'
                                 } 
                     }
-                }
-            task=create_dwh_task(
-                                task_id='ods.'+ k,
-                                python_callable=ODS_PROCESSOR_CFG['python_callable'],
-                                **ODS_PROCESSOR_CFG['op_kwargs']
-                                )
+            }
+            ods_task = CustomPGOperator(**ODS_CFG)
             if previous_task:
-                previous_task >> task 
-            previous_task = task
+                previous_task >> ods_task 
+            previous_task = ods_task
         
-        stg_processor_ >> ods_processor
+        stg_processor >> ods_processor
     
     ods_processor >> end_dwh_etl >> end_dag
-

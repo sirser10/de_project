@@ -13,12 +13,6 @@ import warnings
 
 warnings.filterwarnings("ignore")
 log = logging.getLogger(__name__)
-ENV = os.environ.get('ENV')
-if ENV == 'PROD':
-    log.info(f'Start working in PROD environment')
-else:
-    log.info(f'Start working in DEV environment')
-
 
 class CustomPGOperator(BaseOperator):
     """
@@ -36,7 +30,7 @@ class CustomPGOperator(BaseOperator):
     
     def __init__(
                 self,
-                pg_hook_con: str=ENV,
+                pg_hook_con: str,
                 task_key: str=None,
                 task_id: str=None,
                 stg_cfg: dict=None,
@@ -47,6 +41,7 @@ class CustomPGOperator(BaseOperator):
         if task_id is not None:
             super().__init__(task_id=task_id,**kwargs)
         
+        self.pg_hook_con = pg_hook_con
         self.pg_hook = CustomPGHook(env=pg_hook_con)
         self.conn    = self.pg_hook.get_conn()
         self.cursor  = self.conn.cursor()
@@ -170,8 +165,9 @@ class CustomPGOperator(BaseOperator):
             """
             CHECKING IF EXISTS NEW COLUMNS TO ADD
             """
-            from customs.postgres_helpers.pg_columns_comparison_processor import ColumnComparisonProcessor
+            from helpers.postgres_helpers.pg_columns_comparison_processor import ColumnComparisonProcessor
             self.col_comparison = ColumnComparisonProcessor(
+                                                            pg_hook_con=self.pg_hook_con,
                                                             target_schema=schema_to,
                                                             target_table=tab,
                                                             info_tab_cfg=info_tab_conf,
@@ -257,7 +253,7 @@ class CustomPGOperator(BaseOperator):
         """
         CHECK IF JSONB COLUMNS EXISTS
         """ 
-        from customs.postgres_helpers.pg_jsonb_column_processor import JSONBColumnProcessor
+        from helpers.postgres_helpers.pg_jsonb_column_processor import JSONBColumnProcessor
         self.jsonb_processor = JSONBColumnProcessor(
                                                     info_tab_conf=info_tab_conf,
                                                     target_schema=schema_to,
@@ -315,6 +311,7 @@ class CustomPGOperator(BaseOperator):
         prefix: str                                    = self.ods_cfg.get('prefix',None)
         operation_type: Literal['insert', 'upsert']    = self.ods_cfg.get('operation_type', 'upsert')
         is_jsonb_cols_eraser: bool                     = self.ods_cfg.get('is_jsonb_cols_eraser', False)
+        is_drop_column: Any                            = self.ods_cfg.get('is_drop_column', None)
 
         try:
             tab = f'{prefix}_{table_name}' if prefix else table_name
@@ -346,8 +343,9 @@ class CustomPGOperator(BaseOperator):
                 """
                 CHECKING IF EXISTS NEW COLUMNS TO ADD
                 """
-                from customs.postgres_helpers.pg_columns_comparison_processor import ColumnComparisonProcessor
+                from helpers.postgres_helpers.pg_columns_comparison_processor import ColumnComparisonProcessor
                 self.col_comparison = ColumnComparisonProcessor(
+                                                                    pg_hook_con=self.pg_hook_con,
                                                                     target_schema=schema_to,
                                                                     target_table=tab,
                                                                     df_or_table_from=tab,
@@ -482,6 +480,37 @@ class CustomPGOperator(BaseOperator):
                                         columns_to_update=added_new_columns,
                                         keys_col_list=unique_constraints
                     )
+            if is_drop_column:
+                log.info('is_drop_column mode activated. Need to delete particalur columns!')
+                tab_col_dct = {tab:col for tab, col in is_drop_column.items()}
+                for t, drop_c in tab_col_dct.items():
+                        if tab == prefix+t:
+                            self.cursor.execute(
+                                            self.sql_information_schema(
+                                                                   select_column='column_name',
+                                                                   info_table='columns',
+                                                                   target_schema=schema_to,
+                                                                   target_table=prefix+t
+                                                                    )
+                                        )
+                            fetch_res: tuple = self.cursor.fetchall()
+                            if isinstance(drop_c, list):
+                                exists = any(any(col in tpl for tpl in fetch_res) for col in drop_c)
+                            else:
+                                exists = any(drop_c in tpl for tpl in fetch_res)
+                            
+                            if exists:
+                                table_name = tab
+                                log.info(f'Deleting column {drop_c}...')
+                                self.drop_column(
+                                            schema=schema_to,
+                                            table_name=table_name,
+                                            column=drop_c,
+                                            )
+                                self.conn.commit()
+                        else:
+                            log.info(f'Table {tab} has not got columns to delete. Skip...')
+                            
         except Exception as e:
             log.info(f"Error processing ods tables:{e}")
             raise

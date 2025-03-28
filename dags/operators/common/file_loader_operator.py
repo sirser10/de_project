@@ -1,5 +1,5 @@
 from helpers.common_helpers import CommonHelperOperator
-from operators.common.pg_operator_one_table import src_processor
+from operators.common.pg_operator import CustomPGOperator
 from airflow.models.baseoperator import BaseOperator
 
 from typing import Dict, Any, Tuple 
@@ -38,6 +38,7 @@ class CustomFilesOperator(BaseOperator):
         self.rename_col_mapping = rename_col_mapping
 
         self.common_helper      = CommonHelperOperator()
+        self.pg_operator        = CustomPGOperator(pg_hook_con=self.pg_src_cfg['pg_hook_con'])
 
         self.task_key = task_key
         self.exec_method = {
@@ -61,7 +62,6 @@ class CustomFilesOperator(BaseOperator):
     
     def find_and_load_file_to_db(self) -> None:
         
-        pg_hook_con: str         = self.pg_src_cfg['pg_hook_con']
         pg_src_info_cfg: dict    = self.pg_src_cfg['pg_src_info_cfg']
         dir_path: str            = self.dir_path
         rename_col_mapping: dict = self.pg_src_cfg.get('rename_col_mapping', {})
@@ -86,14 +86,13 @@ class CustomFilesOperator(BaseOperator):
                 proper_csv_file_name: str = self.common_helper.get_file_name_from_config(csv_, file_name_mapping) if file_name_mapping else self.common_helper.get_file_name_wo_ext(csv_)
                 log.info(f'New propper file name - {proper_csv_file_name}')
 
-                src_processor(
-                            pg_hook_con=pg_hook_con,
-                            source_obj=df_csv,
-                            pg_src_info_cfg=pg_src_info_cfg,
-                            table_name=prefix + '_' + proper_csv_file_name if prefix else proper_csv_file_name,
-                            columns=pg_columns,
-                            method=erase_method
-                            )
+                self.pg_operator.src_processor(
+                                            source_obj=df_csv,
+                                            pg_src_info_cfg=pg_src_info_cfg,
+                                            table_name=prefix + '_' + proper_csv_file_name if prefix else proper_csv_file_name,
+                                            columns=pg_columns,
+                                            method=erase_method
+                                        )
                 log.info(f"{csv_} was successfully loaded to DWH")
         else:
             pass
@@ -110,14 +109,13 @@ class CustomFilesOperator(BaseOperator):
                 proper_xlsx_file_name: str = self.common_helper.get_file_name_from_config(xlsx_, file_name_mapping) if file_name_mapping else self.common_helper.get_file_name_wo_ext(xlsx_)
                 log.info(f'New propper file name - {proper_xlsx_file_name}')
 
-                src_processor(
-                            pg_hook_con=pg_hook_con,
-                            source_obj=df_xlsx,
-                            pg_src_info_cfg=pg_src_info_cfg,
-                            table_name=prefix + '_' + proper_xlsx_file_name if prefix else proper_xlsx_file_name,
-                            columns=pg_columns,
-                            method=erase_method,
-                            )
+                self.pg_operator.src_processor(
+                                            source_obj=df_xlsx,
+                                            pg_src_info_cfg=pg_src_info_cfg,
+                                            table_name=prefix + '_' + proper_xlsx_file_name if prefix else proper_xlsx_file_name,
+                                            columns=pg_columns,
+                                            method=erase_method,
+                                            )
                 log.info(f"{xlsx_} was successfully loaded to DWH")
                 
 
