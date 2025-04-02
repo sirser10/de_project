@@ -72,7 +72,8 @@ class CustomPGOperator(BaseOperator):
                     table_name: str, 
                     columns: dict,
                     schema: str = 'src',
-                    method: str = 'truncate'
+                    method: str = 'truncate',
+                    void_replace: bool=False
                     ) -> None:
         try:
             info_query_res: str = self.sql_information_schema(
@@ -120,6 +121,8 @@ class CustomPGOperator(BaseOperator):
                                             columns=columns,
                                             file_name=f
                                         )
+                if void_replace:
+                    self.void_or_voidlike_col_value_removal(schema,table_name)
                 self.conn.commit()
                 os.remove(filename)
 
@@ -200,6 +203,7 @@ class CustomPGOperator(BaseOperator):
                                     WHEN LENGTH({col}) =10 AND position('.' IN {col}) > 0 THEN TO_DATE({col},'DD.MM.YYYY')
                                     WHEN LENGTH({col}) =10 AND position('-' IN {col}) > 0 THEN TO_DATE({col},'YYYY-MM-DD')
                                     WHEN LENGTH({col}) =10 AND position('-' IN {col}) = 0 THEN TO_DATE({col},'YYYY-DD-MM')
+                                    ELSE {col} :: DATE
                                     END :: DATE AS {col}""" if col_type.startswith('DATE')
                                 else 
                                 f"{col}:: VARCHAR AS {col}" if col_type.startswith('VARCHAR')
@@ -234,7 +238,7 @@ class CustomPGOperator(BaseOperator):
             if len(null_cols)>0:
                 select_partition_null_cols: str = ', '.join([f"COALESCE({cols}, 'null') AS {cols}_null" for cols in null_cols])
                 partition_null_cols: list = re.findall(r'\w+_null', select_partition_null_cols)
-                notnull_cols.append(partition_null_cols)
+                notnull_cols.extend(partition_null_cols)
 
                 partition_null_cols_str: str = ', '.join(partition_null_cols)
                 partition_cols: str = ', '.join([cols for cols in notnull_cols])
@@ -292,7 +296,7 @@ class CustomPGOperator(BaseOperator):
             log.info(stg_query)
             self.cursor.execute(stg_query)
             self.conn.commit()
-            log.info('SQL-script completed successfully.')
+            log.info('Generated SQL-script completed successfully.')
         except Exception as e:
             log.info(f'Error processing {schema_to}.{tab}: {e}')
             self.conn.rollback()
@@ -444,12 +448,8 @@ class CustomPGOperator(BaseOperator):
                                 DROP TABLE IF EXISTS {schema_to}.{tab};
                                 {create_target_table}
                                 {create_constraints_query}
-                                WITH inserted_rows as (
-                                    INSERT INTO {schema_to}.{tab} ({colmns_wo_dtype})
-                                    SELECT {colmns_wo_dtype} FROM {schema_from}.{tab}
-                                    RETURNING 1
-                                    )
-                                SELECT COUNT(*) FROM inserted_rows
+                                INSERT INTO {schema_to}.{tab} ({colmns_wo_dtype})
+                                SELECT {colmns_wo_dtype} FROM {schema_from}.{tab}
                                 ;
                                 """
                 try:
@@ -480,6 +480,7 @@ class CustomPGOperator(BaseOperator):
                                         columns_to_update=added_new_columns,
                                         keys_col_list=unique_constraints
                     )
+            #DROP EXTRA COLUMN(S) FEATURE
             if is_drop_column:
                 log.info('is_drop_column mode activated. Need to delete particalur columns!')
                 tab_col_dct = {tab:col for tab, col in is_drop_column.items()}
@@ -699,5 +700,44 @@ class CustomPGOperator(BaseOperator):
                 raise ValueError("Row count mismatch after UPDATE.")
         except Exception as e:
             log.error(f"An error occurred: {e}")
+            self.conn.rollback()
+            raise
+
+    def void_or_voidlike_col_value_removal(
+                                        self,
+                                        schema: str,
+                                        table: str,
+                                        ) -> None:
+        try:
+            inforamtion_columns_query: List[str] = self.sql_information_schema(
+                                                                            select_column='column_name',
+                                                                            info_table='columns',
+                                                                            target_schema=schema,
+                                                                            target_table=table,
+                                                                            )
+            self.cursor.execute(inforamtion_columns_query)
+            inforamtion_columns_list: List[str] = [col[0] for col in self.cursor.fetchall()]
+
+            empty_symbols = ['', ' ', 'N/A', 'None']
+            empty_symbols_str = ", ".join(f"'{symbol}'" for symbol in empty_symbols)
+
+            for col in inforamtion_columns_list:
+                query_search_columns = f"SELECT EXISTS (SELECT 1 FROM {schema}.{table} WHERE {col} IN ({empty_symbols_str}) LIMIT 1);"
+                log.info(f"Executing SELECT EXISTS: {query_search_columns}")
+                self.cursor.execute(query_search_columns)
+                exists = self.cursor.fetchone()[0]
+                update_query = f"""
+                                    UPDATE {schema}.{table}
+                                    SET {col} = NULL 
+                                    WHERE {col} IN ({empty_symbols_str})
+                                    ;
+                                """
+                if exists:
+                    log.info(f"Void/Voidlike symbols has been detected. Executing {update_query}")
+                    self.cursor.execute(update_query)
+                else:
+                    log.info(f"The result of Void/Voidlike symbols existing: '{exists}'. No Void/Voidlike symbols have not been detected.")
+        except Exception as e:
+            log.error(f"Error while processing column in table {schema}.{table}: {e}")
             self.conn.rollback()
             raise
