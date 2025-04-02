@@ -11,8 +11,8 @@ from io import StringIO, BytesIO
 
 from airflow.models.baseoperator import BaseOperator
 from hooks.s3_hook import CustomS3Hook
-from operators.common.pg_operator_one_table import src_processor
-from helpers.common_helpers import CommonHelperOperator
+from operators.common.pg_operator_c import CustomPGOperator
+from customs.helpers.common_helpers import CommonHelperOperator
 
 import pandas as pd
 import logging
@@ -23,6 +23,11 @@ import fastparquet as fp
 
 log = logging.getLogger(__name__)
 
+class PandasColumnTypeMapping:
+    pd_int_type_mapper = {
+        'object':'Int64',
+        'int64':'Int64',
+    }
 
 class S3CustomOperator(BaseOperator):
 
@@ -41,7 +46,7 @@ class S3CustomOperator(BaseOperator):
         
         if task_id is not None:
             super().__init__(task_id=task_id,**kwargs)
-
+        
         self.s3_hook = CustomS3Hook(env=s3_hook_con)
         self.bucket  = bucket
 
@@ -55,21 +60,20 @@ class S3CustomOperator(BaseOperator):
         self.pg_cfg            = pg_cfg
 
         self.task_key = task_key if task_key is not None else task_id
-
         self.exec_method: dict = {
-            's3_stage_processor': self.s3_stage_processor,
-            's3_distilled_processor': self.s3_distilled_processor,
-            's3_loading_to_db_processor': self.s3_loading_to_db_processor
+                                    's3_stage_processor': self.s3_stage_processor,
+                                    's3_distilled_processor': self.s3_distilled_processor,
+                                    's3_loading_to_db_processor': self.s3_loading_to_db_processor
         }
         self.dag_context = {key: None for key in ['dag_id', 'dag_run_id', 'dag_start_dttm']}
-
+        
     def execute(self, context: dict) -> Any:
 
         self.dag_context.update(
                                 {
                                 'dag_id': context['dag'].dag_id,
                                 'dag_run_id': context['dag_run'].run_id,
-                                'dag_start_dttm': context['dag_run'].execution_date
+                                'dag_start_dttm': context['dag_run'].execution_date.strftime('%Y-%m-%d %H:%M:%S')
                                 }
                             )
         
@@ -201,7 +205,7 @@ class S3CustomOperator(BaseOperator):
             log.error(f"Error reading CSV file: {e}")
             raise
 
-    def df_read_parquet(self, paquet_buffer: BytesIO, **kwargs) -> DataFrame:
+    def df_read_parquet(self, paquet_buffer: BytesIO) -> DataFrame:
         try: 
             if isinstance(paquet_buffer, BytesIO):
                 df = pd.read_parquet(path=paquet_buffer)
@@ -312,7 +316,29 @@ class S3CustomOperator(BaseOperator):
         except Exception as e:
             log.info(f'Error occured while writing parquet: {e}')
             raise
-            
+
+    def void_check(self, sorted_arr: list) -> Union[bool, str]:
+        if isinstance(sorted_arr, list):
+            empty_symbols = ['', ' ', 'N/A']
+            find_null_value: bool|str = sorted_arr[0] if sorted_arr[0] in empty_symbols else False
+            if find_null_value:
+                void_symbol: str = find_null_value
+                return void_symbol
+            return False
+        else:
+            ValueError('Input arg is not list. Put the list instead.')   
+
+    def void_or_nulls_column_replace(self, df: DataFrame) -> None:
+        
+        col_lst = df.columns.to_list()
+        for col in col_lst:
+            uniq_col_vals = [str(v) for v in df[col].unique()]
+            uniq_col_vals.sort()
+            void_symbol = self.void_check(uniq_col_vals)
+            if void_symbol:
+                log.info(f"Column {col} has void values: '{void_symbol}'")
+                df[col] = df[col].replace(regex=f"^{void_symbol}$", value=None)
+
     def s3_ingest_loader(
                         self,
                         ingest_path: str,
@@ -336,11 +362,26 @@ class S3CustomOperator(BaseOperator):
                                         replace=True
                                     )
                 log.info(f"File has been written to {ingest_path + file_name + '.csv'} successfully.")
-                os.remove(file_name)
         except Exception as e:
             log.info(f'Error in processing ingest object: {e}')
             raise
     
+    def get_col_types_as_dct(self, df: DataFrame) -> dict:
+        return df.dtypes.astype(str).to_dict()
+    
+    def int_col_mapping_process(self, df: DataFrame) -> None:
+      
+        pd_mapping = PandasColumnTypeMapping()
+        int_map = dict(pd_mapping.pd_int_type_mapper)
+        
+        col_types_dct = self.get_col_types_as_dct(df)
+        for col_name, type_ in col_types_dct.items():
+            
+            uniq_values_lst = [str(v) for v in df[col_name].unique()]
+            uniq_values_lst.sort()
+            if type_ in int_map and all([v.isnumeric() for v in uniq_values_lst if v !='None']):
+                    df[col_name] = df[col_name].apply(lambda x: str(x) if pd.notnull(x) else x).astype(int_map[type_])
+
     def s3_stage_processor(self) -> None:
         
         source_path: str                           = self.stage_cfg['source_path']
@@ -349,21 +390,25 @@ class S3CustomOperator(BaseOperator):
         file_name_mapping: dict                    = self.stage_cfg.get('file_name_mapping',{})
         write_format: Literal['csv', 'parquet']    = self.stage_cfg['write_format']
         write_mode: Literal['append', 'overwrite'] = self.stage_cfg.get('write_mode', None)
-        kwargs = self.kwargs if self.kwargs else None
+        void_replace_mode: bool                    = self.stage_cfg.get('void_replace_mode',False)
+        pd_col_type_mapping: bool                  = self.stage_cfg.get('pd_col_type_mapping', False)
+        kwargs                                     = self.kwargs if self.kwargs else None
 
         read_ingest_files: list = self.read_s3bucket_obj(self.bucket, source_path)
         log.info(f'Ingest-layer objects: \n{read_ingest_files}')
 
         if len(read_ingest_files) > 0:
             for file in read_ingest_files:
-                
+                    
                 log.info(f'The processig of {file} has been started')
 
                 s3_content: Any = self.read_s3_file(s3_obj=file, bucket=self.bucket)
                 string_object: StringIO = StringIO(s3_content)
                 metadata_columns = self.common_helper.get_metadata_columns(s3_obj_path=file, context=self.dag_context)
                 df: DataFrame = self.df_read_csv(string_object)
-                df: DataFrame = (
+                self.void_or_nulls_column_replace(df) if void_replace_mode else df
+                self.int_col_mapping_process(df) if pd_col_type_mapping else df
+                df_formatted: DataFrame = (
                                 self.rename_columns(
                                                     file_name=file,
                                                     df=df,
@@ -372,14 +417,14 @@ class S3CustomOperator(BaseOperator):
                                                     .assign(**metadata_columns)
                 )
                                                                 
-                df_column_dtypes: str = ', '.join([f'{col} : {dtype}' for col, dtype in df.dtypes.items()])
+                df_column_dtypes: str = ', '.join([f'{col} : {dtype}' for col, dtype in df_formatted.dtypes.items()])
                 log.info('Columns of Dataframe:\n%s', list({df_column_dtypes}))
 
                 proper_file_name = self.common_helper.get_file_name_from_config(file, file_name_mapping) if file_name_mapping else self.common_helper.get_file_name_wo_ext(file)
                 log.info(f'File name - {proper_file_name}')
                 if write_format == 'parquet':
                     self.write_df_to_parquet(
-                                            df_to_write=df,
+                                            df_to_write=df_formatted,
                                             file_name=proper_file_name,
                                             s3_key=dest_path+proper_file_name,
                                             bucket_name=self.bucket,
@@ -387,7 +432,7 @@ class S3CustomOperator(BaseOperator):
                                         )
                 elif write_format == 'csv':
                     csv_buffer = StringIO()
-                    df.to_csv(csv_buffer, sep=',', index=False, encoding='utf-8')
+                    df_formatted.to_csv(csv_buffer, sep=',', index=False, encoding='utf-8')
                     self.s3_hook.load_string(
                                         string_data=csv_buffer.getvalue(),
                                         key=dest_path + proper_file_name + '.csv',
@@ -413,12 +458,12 @@ class S3CustomOperator(BaseOperator):
                     for file in read_csv_files:
                         log.info(f'The distillation processig of {file} has been started')
 
-                        s3_content: Any = self.read_s3_file(s3_obj=file, bucket=self.bucket)
+                        s3_content = self.s3_hook.read_key(file, self.bucket)
                         string_object: StringIO =StringIO(s3_content)
-                        df: DataFrame = self.df_read_csv(string_object)
+                        df: DataFrame = pd.read_csv(string_object)
 
                         df_column_dtypes: str = ', '.join([f'{col} : {dtype}' for col, dtype in df.dtypes.items()])
-                        log.info('Columns of Dataframe:', list({df_column_dtypes}))
+                        log.info(f'Columns of Dataframe: {list({df_column_dtypes})}')
 
                         distilled_file_name = self.common_helper.get_file_name_wo_ext(file)
                         log.info(f"Primary keys for DataFrame: {distillation_proc_cfg[distilled_file_name]['key_columns']}")
@@ -480,6 +525,7 @@ class S3CustomOperator(BaseOperator):
         erase_method: str                      = self.pg_cfg.get('erase_method', 'truncate')
         pg_src_info_cfg: dict                  = self.pg_cfg['pg_src_info_cfg']
         schema: str                            = self.pg_cfg.get('schema', 'src')
+        void_replace: bool                     = self.pg_cfg.get('void_replace', False)                          
         kwargs                                 = self.kwargs if self.kwargs else None
 
         read_distilled_obj: List[str] = self.read_s3bucket_obj(self.bucket, source_path)
@@ -489,9 +535,9 @@ class S3CustomOperator(BaseOperator):
                 log.info(f'The processig of {obj} has been started')
                 if read_format == 'csv':
                 
-                    s3_content: Any = self.read_s3_file( s3_obj=obj, bucket=self.bucket)
+                    s3_content = self.s3_hook.read_key(obj, self.bucket)
                     string_object: StringIO =StringIO(s3_content)
-                    df: DataFrame = self.df_read_csv(string_object, **kwargs)
+                    df: DataFrame = pd.read_csv(string_object)
                 else:
                     s3_content = self.read_s3_file(
                                                 s3_obj=obj,
@@ -503,12 +549,14 @@ class S3CustomOperator(BaseOperator):
 
                 table_name = self.create_primary_pgtable_name(file_name=obj,prefix=prefix)
                 columns: dict = {col: 'TEXT' for col in df.columns}
-                src_processor(
-                            pg_hook_con=pg_hook_con,
-                            source_obj=df,
-                            pg_src_info_cfg=pg_src_info_cfg,
-                            table_name=table_name,
-                            columns=columns,
-                            schema=schema,
-                            method=erase_method,
-                )
+
+                self.pg_operator = CustomPGOperator(pg_hook_con=pg_hook_con)
+                self.pg_operator.src_processor(
+                                                source_obj=df,
+                                                pg_src_info_cfg=pg_src_info_cfg,
+                                                table_name=table_name,
+                                                columns=columns,
+                                                schema=schema,
+                                                method=erase_method,
+                                                void_replace=void_replace,
+                                                )
