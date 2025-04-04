@@ -11,8 +11,8 @@ from io import StringIO, BytesIO
 
 from airflow.models.baseoperator import BaseOperator
 from hooks.s3_hook import CustomS3Hook
-from operators.common.pg_operator_c import CustomPGOperator
-from customs.helpers.common_helpers import CommonHelperOperator
+from operators.common.pg_operator import CustomPGOperator
+from helpers.common_helpers import CommonHelperOperator
 
 import pandas as pd
 import logging
@@ -160,6 +160,7 @@ class S3CustomOperator(BaseOperator):
                 file_content = string_object.read().encode()
                 result = chardet.detect(file_content)
                 encoding_res = result['encoding']
+                log.info(f"Detected encoding: {encoding_res}")
 
                 possible_seps = [",", ";", "\t", "|", " ", '"', "'", "#", "/", ".", ",", "<", ">", "?", "~", "@", ":", ",", "}", "{", "]", "[", "+", "=", "-", "_"]
                 string_object.seek(0)
@@ -198,7 +199,7 @@ class S3CustomOperator(BaseOperator):
             if unnamed_cols:
                 df_final = df_final.drop(unnamed_cols, axis=1)
                 log.info(f"Dropped columns: {unnamed_cols}")
-            log.info(f'Cols number after column were dropped: {len(df_final.columns)}')
+            log.info(f'Cols number after column was dropped: {len(df_final.columns)}')
 
             return df_final
         except Exception as e:  
@@ -239,17 +240,21 @@ class S3CustomOperator(BaseOperator):
                     s3_obj: Any,
                     bucket: str, 
                     encoding_detector: bool=True,
+                    parquet: bool=False,
                     ) -> Any:
         try:
-            s3_get_file = self.s3_hook.get_key(s3_obj, bucket)
-            response = s3_get_file.get()
-            file_content = response['Body'].read()
+            if parquet:
+                s3_get_file = self.s3_hook.get_key(s3_obj, bucket)
+                response = s3_get_file.get()
+                file_content = response['Body'].read()
 
-            if encoding_detector:
-                result = chardet.detect(file_content)
-                encoding = result['encoding']
-                log.info(f"Detected encoding of {s3_obj}: {encoding}")
-                file_content = file_content.decode(encoding)
+                if encoding_detector:
+                    result = chardet.detect(file_content)
+                    encoding = result['encoding']
+                    log.info(f"Detected encoding of s3 object {s3_obj}: {encoding}")
+                    file_content = file_content.decode(encoding)
+            else:
+                file_content = self.s3_hook.read_key(s3_obj, bucket)
 
             return file_content
         except Exception as e:
@@ -290,7 +295,8 @@ class S3CustomOperator(BaseOperator):
                 read_existing_parquet = self.read_s3_file(
                                                         s3_obj=existing_s3_key_parquet,
                                                         bucket=bucket_name,
-                                                        encoding_detector=False
+                                                        encoding_detector=False,
+                                                        parquet=True,
                                                         )
                 parquet_buffer: BytesIO = io.BytesIO(read_existing_parquet)
                 df_existing: DataFrame = self.df_read_parquet(parquet_buffer)
@@ -392,6 +398,7 @@ class S3CustomOperator(BaseOperator):
         write_mode: Literal['append', 'overwrite'] = self.stage_cfg.get('write_mode', None)
         void_replace_mode: bool                    = self.stage_cfg.get('void_replace_mode',False)
         pd_col_type_mapping: bool                  = self.stage_cfg.get('pd_col_type_mapping', False)
+        encoding_detector: bool                    = self.stage_cfg.get('encoding_detector', True)
         kwargs                                     = self.kwargs if self.kwargs else None
 
         read_ingest_files: list = self.read_s3bucket_obj(self.bucket, source_path)
@@ -402,7 +409,11 @@ class S3CustomOperator(BaseOperator):
                     
                 log.info(f'The processig of {file} has been started')
 
-                s3_content: Any = self.read_s3_file(s3_obj=file, bucket=self.bucket)
+                s3_content: Any = self.read_s3_file(
+                                                    s3_obj=file,
+                                                    bucket=self.bucket,
+                                                    encoding_detector=encoding_detector
+                                                    )
                 string_object: StringIO = StringIO(s3_content)
                 metadata_columns = self.common_helper.get_metadata_columns(s3_obj_path=file, context=self.dag_context)
                 df: DataFrame = self.df_read_csv(string_object)
@@ -431,15 +442,17 @@ class S3CustomOperator(BaseOperator):
                                             write_mode=write_mode
                                         )
                 elif write_format == 'csv':
-                    csv_buffer = StringIO()
-                    df_formatted.to_csv(csv_buffer, sep=',', index=False, encoding='utf-8')
-                    self.s3_hook.load_string(
-                                        string_data=csv_buffer.getvalue(),
+                    csv_file ='stg_' + proper_file_name +'.csv'
+                    df_formatted.to_csv(csv_file, sep=',', index=False, encoding='utf-8')
+                    self.s3_hook.load_file(
+                                        filename=csv_file,
                                         key=dest_path + proper_file_name + '.csv',
                                         bucket_name=self.bucket,
                                         replace=True
                                         )
                     log.info(f'File has been successfully loaded to S3 bucket {dest_path}{proper_file_name}.csv')
+                    os.remove(csv_file)
+
 
     def s3_distilled_processor(self) -> None:
         
@@ -487,7 +500,8 @@ class S3CustomOperator(BaseOperator):
                         s3_content: Any = self.read_s3_file(
                                                             s3_obj=file,
                                                             bucket=self.bucket,
-                                                            encoding_detector=False
+                                                            encoding_detector=False,
+                                                            parquet=True
                                                             )
                         parquet_buffer: BytesIO = io.BytesIO(s3_content)
                         df: DataFrame = self.df_read_parquet(parquet_buffer)
@@ -538,11 +552,12 @@ class S3CustomOperator(BaseOperator):
                     s3_content = self.s3_hook.read_key(obj, self.bucket)
                     string_object: StringIO =StringIO(s3_content)
                     df: DataFrame = pd.read_csv(string_object)
-                else:
+                elif read_format == 'parquet':
                     s3_content = self.read_s3_file(
                                                 s3_obj=obj,
                                                 bucket=self.bucket,
-                                                encoding_detector=False
+                                                encoding_detector=False,
+                                                parquet=True,
                                                 )
                     parquet_buffer: BytesIO = io.BytesIO(s3_content)
                     df: DataFrame = self.df_read_parquet(parquet_buffer)
