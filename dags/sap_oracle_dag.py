@@ -42,7 +42,7 @@ with DAG(
         concurrency = 2
         ) as dag:
 
-    bucket_name: str = 'hran'
+    bucket_name: str = 'bucker_name'
     ingest_path: str = f'ingest/sap_oracle/'
     stage_path: str = f'stage/sap_oracle/'
     distilled_path: str = f'distilled/sap_oracle/'
