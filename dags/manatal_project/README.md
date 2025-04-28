@@ -26,6 +26,9 @@
     - dags/manatal_project/config/manual_table_config.py - Dictionary of propper renaming columns within given file and propper table name within PostgreS
 
 ### Airflow DAG
+<img width="1708" alt="Screenshot 2025-04-28 at 12 50 10" src="https://github.com/user-attachments/assets/888a4c13-f736-4d16-93ac-92b6e2433deb" />
+
+
 
 ### TOTAL INSIGTS OF ETL
 
