@@ -27,6 +27,20 @@
 
 ### Airflow DAG
 
+### TOTAL INSIGTS OF ETL
+
+1) Given row numbers - 1002. After all transformations - 906
+2) Considered Primary Key - candidate_id
+3) In stg.manual_interviewed_data it was supposed that key columns of file are: [candidate_id, username, last/first/middle_name, date_of_birth].
+    So as far as my experience of HR data processing concerns, aforamentioned columns cannot contain null(void) values, so I filtered all nulls in these columns.
+    Moreover, as I mentioned previously, we consider [candidate_id] as PK, so it cannot contain any nulls.
+4) I supposed that it would be interesting and useful to normalize the data from [ods.manual_interviewed_data] into 3 separate tables:
+ - dim_offer_details
+ - dim_candidate_addresses
+ - dim_personal_info
+ This allows us to see the data in more compact way in terms of DWH-processes and Business Uses
+
+
     
 
 
