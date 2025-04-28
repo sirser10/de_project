@@ -27,6 +27,8 @@
 
 ### Airflow DAG
 <img width="1708" alt="Screenshot 2025-04-28 at 12 50 10" src="https://github.com/user-attachments/assets/888a4c13-f736-4d16-93ac-92b6e2433deb" />
+<img width="1663" alt="Screenshot 2025-04-28 at 12 49 54" src="https://github.com/user-attachments/assets/ef1be8d6-584a-477b-93ae-b114a0a3fcf7" />
+
 
 
 
