@@ -32,7 +32,7 @@
 
 
 
-### TOTAL INSIGTS OF ETL
+### TOTAL INSIGHTS OF ETL
 
 1) Given row numbers - 1002. After all transformations - 906
 2) Considered Primary Key - candidate_id
