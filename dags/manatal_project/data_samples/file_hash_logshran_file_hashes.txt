@@ -1,1 +1,0 @@
-/opt/airflow/dags/data_samples/hran/interview_data_with_anomalies.csv 99886dc66898b1320fe71a64d979f159
