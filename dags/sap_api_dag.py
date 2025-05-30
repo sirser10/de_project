@@ -45,7 +45,7 @@ SAP_ENTITIES_CFG =\
                         'auth':True,
         },
         'any_org_structure' :{
-                                'endpoint':'rest_api/jira/',
+                                'endpoint':'rest_api/any/',
                                 'params': {
                                             'entity_param': 'url_param',
                                 },
