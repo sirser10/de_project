@@ -28,26 +28,26 @@ default_args['default_args']['owner'] = 's.frolkin'
 SAP_ENTITIES_CFG =\
     {
         'org_structure' :{
-                            'endpoint':'rest_api/dwh_analytics/',
+                            'endpoint':'rest_api/any_endpoint/',
                             'params': {
-                                    'entity_param': Variable.get('getsap_org_url_param'),
+                                    'entity_param': Variable.get('url_param'),
                             },
                             'json': {**EMPLOYEE_SAP_CFG},
                             'method':'post',
                             'auth':True,
         },
         'bu_structure':{
-                        'endpoint':'rest_api/dwh_analytics/',
+                        'endpoint':'rest_api/any_endpoint/',
                         'params': {
-                            'entity_param':Variable.get('getsap_bu_url_param')
+                            'entity_param':Variable.get('url_param')
                         },
                         'method':'post',
                         'auth':True,
         },
-        'jira_org_structure' :{
+        'any_org_structure' :{
                                 'endpoint':'rest_api/jira/',
                                 'params': {
-                                            'entity_param': 'get_org_struc',
+                                            'entity_param': 'url_param',
                                 },
                                 'json': {**EMPLOYEE_SAP_CFG},
                                 'method':'post',
@@ -55,7 +55,7 @@ SAP_ENTITIES_CFG =\
         }
 }
 LEGAL_ENTITY_CFG ={
-        'endpoint':Variable.get('sap_employee_endpoint'),
+        'endpoint':Variable.get('sap_endpoint'),
         'params': {
             'entity_param': "(Pernr='{}',",
             'date_param':"Date={})"
@@ -111,7 +111,7 @@ with DAG(
                                     'sap_dim_legal_struct'
                     ],
                     'bu_structure': ['sap_dim_bu'],
-                    'jira_org_structure': [
+                    'any_org_structure': [
                                     'sap_dim_positions',
                                     'sap_dim_org_units',
                                     'sap_dim_employees',
