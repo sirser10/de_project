@@ -1,0 +1,102 @@
+dds.sap_dim_org_units_history:
+  description_cfg:
+      table_description: Таблица содержит исторические данные SAP по организационным юнитам
+      field_description:
+          ms_org_unit_id': идентификатор организационного юнита
+          parent_ms_org_unit_id: родительский идентификатор организационного юница
+          description: название организационного юнита
+          manager: начальник организационного юнита
+          hrbp: HR бизнес-партнер
+          hrd: HR директор
+          valid_from_dt: дата открытия периода действия
+          valid_to_dt: дата закрытия периода действия
+          updated_dttm: дата обновления таблицы
+
+  lineage:
+      dds.sap_dim_org_units_history: ods.sap_dim_org_units
+
+
+dds.sap_dim_bu_history:
+  description_cfg:
+    table_description: Таблица содержит исторические данные SAP по бизнес юнитам
+    field_description:
+        row_code: md5 hash идентификатор строки
+        bu_id: идентификатор бизнес юнита
+        bu_type: тип бизнес юнита
+        bu_name: название бизнес юнита
+        bu_parent_type: родительский тип бизнес юнита
+        manager_user_email: почта руководителя 
+        financier_user: финансовый партнер
+        valid_from_dt: дата начала действия записи
+        valid_to_dt: дата окончания действия записи 
+        updated_dttm: дата обновления таблицы
+  
+  lineage:
+        dds.sap_dim_bu_history : ods.sap_dim_bu
+
+
+dds.sap_dim_employees_history:
+  description_cfg:
+        table_description: Таблица содержит исторические данные SAP по сотрудникам
+        field_description:
+            row_code: md5 hash идентификатор строки
+            employee_id: табельный номер SAP
+            email: почта
+            name: имя сотрудника
+            surname: фамилия сотрудника
+            patronymic: отчество сотрудника
+            ms_org_unit_id: идентификатор организационного юнита
+            ms_position_id: идентификатор позиции
+            valid_from_dt: дата начала действия записи
+            valid_to_dt: дата окончания действия записи
+            updated_dttm: дата обновления таблицы
+    
+  lineage:
+    dds.sap_dim_employees_history: ods.sap_dim_employees
+
+
+dds.sap_dim_legal_struct_history:
+  description_cfg:
+      table_description: Таблица содержит исторические данные SAP по юридической структуре
+      field_description:
+          row_code: md5 hash идентификатор строки
+          employee_id: табельный номер SAP
+          person_id: уникальный и неизменяемый персональный номер сотрудника
+          email: почта
+          username: псевдоним сотрудника в SAP
+          legal_position_id: юридический номер позиции сотрудника
+          legal_position_name: юридическое наименование позиции сотрудника
+          legal_unit_id: юридический идентификатор бизнес юнита
+          legal_unit_name: юридическое название бизнес юнита
+          employee_group_id: идентификатор группы принадлежности сотрудника
+          employee_group_name: наименование группы принадлежности сотрудника
+          employee_category_id: идентификатор группы категории сотрудника
+          employee_category_name: наименование группы категории сотрудника
+          cost_center_bybudgetstruct: код кост-центра бюджетной структуры
+          cost_center_byposition: код кост-центра позиции 
+          valid_from_dt: дата начала действия записи
+          valid_to_dt: дата окончания действия записи
+          updated_dttm: дата обновления таблицы
+  
+  lineage:
+    dds.sap_dim_legal_struct_history: ods.sap_dim_legal_struct
+
+
+dds.sap_dim_positions_history: 
+  description_cfg:
+    table_description: Таблица содержит исторические данные SAP по позициям сотрудников
+    field_description:
+        row_code: md5 hash идентификатор строки
+        ms_position_id: идентификатор позиции
+        ms_org_unit_id: идентификатор организационного юнита
+        description: название позиции 
+        budget_code_id: идентификатор бюджетного кода позиции
+        budget_code_name: название бюджетного кода позиции
+        new_position: флаг новой позиции
+        date_entry: дата выхода
+        valid_from_dt: дата начала действия записи
+        valid_to_dt: дата окончания действия записи
+        updated_dttm: дата обновления таблицы
+
+  lineage:
+    dds.sap_dim_positions_history: ods.sap_dim_positions
