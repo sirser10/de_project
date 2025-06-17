@@ -11,7 +11,7 @@ The script below automatically searches manual 'src' tables and its columns for 
 #start
 from hooks.pg_hook import pg_hook
 from typing import Tuple, List
-from operators.common.pg_operator_one_table import SQLDatatypeDetector
+from helpers.postgres_helpers.pg_datatype_detector import SQLDatatypeDetector
 import os
 
 ENV: str = os.environ.get('ENV')
