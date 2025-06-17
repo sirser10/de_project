@@ -32,6 +32,7 @@ class CustomAPIHook(BaseHook):
                                params: dict=None,
                                data: Any=None,
                                json: dict=None,
+                               status_error_handler: bool=False,
                                **kwargs
                               ) -> Response:
             
@@ -62,7 +63,10 @@ class CustomAPIHook(BaseHook):
                   log.info(f"Headers: {headers}")
                   log.info(f"Data: {data}") 
 
-                  log.info('Https connection has been complited successfully.') if response.status_code == 200 else response.raise_for_status()
+                  if response.status_code == 200:
+                        log.info('Https connection has been complited successfully.')
+                  else:
+                        log.error(f"Request failed with status code: {response.status_code}.") if status_error_handler else response.raise_for_status()
 
             return response
 
