@@ -314,7 +314,7 @@ class CustomPGOperator(BaseOperator):
         info_tab_conf: Dict[str, Union[str,List[str]]] = self.ods_cfg['info_tab_conf']
         prefix: str                                    = self.ods_cfg.get('prefix',None)
         operation_type: Literal['insert', 'upsert']    = self.ods_cfg.get('operation_type', 'upsert')
-        is_jsonb_cols_eraser: bool                     = self.ods_cfg.get('is_jsonb_cols_eraser', False)
+        is_jsonb_col_eraser: bool                      = self.ods_cfg.get('is_jsonb_col_eraser', False)
         is_drop_column: Any                            = self.ods_cfg.get('is_drop_column', None)
 
         try:
@@ -355,7 +355,7 @@ class CustomPGOperator(BaseOperator):
                                                                     df_or_table_from=tab,
                                                                     schema_from=schema_from,
                                                                     info_tab_cfg=info_tab_conf,
-                                                                    is_jsonb_cols_eraser=is_jsonb_cols_eraser
+                                                                    is_jsonb_cols_eraser=is_jsonb_col_eraser
                                                                     )
                 added_new_columns: list = self.col_comparison.columns_comparison_processor()
             else:
