@@ -21,26 +21,21 @@ dm.skylight_visits_dag:
       operator: airflow.operators.dummy_operator.DummyOperator
     
     dm.skylight_visits:
-        operator: airflow.operators.python.PythonOperator
-        python_callable_name: sql_script_execution
-        python_callable_file: /opt/airflow/dags/operators/common/pg_operator.py
-        op_kwargs:
-          pg_hook_con: $ENV
-          directory: /opt/airflow/dags/sql/other/
-          schema_folder: dm
-          table_name: skylight_visits
-        dependencies: [start_dag]
+      operator: operators.common.sql_script_executor.SQLScriptExecution
+      pg_hook_con: $ENV
+      read_sql_cfg:
+        directory: /opt/airflow/dags/sql/other/
+        schema_folder: dm
+        table_name: skylight_visits
+      dependencies: [start_dag]
     
     dm.skylight_visits_detail:
-        operator: airflow.operators.python.PythonOperator
-        python_callable_name: sql_script_execution
-        python_callable_file: /opt/airflow/dags/operators/common/pg_operator.py
-        op_kwargs:
-          pg_hook_con: $ENV
-          directory: /opt/airflow/dags/sql/other/
-          schema_folder: dm
-          table_name: skylight_visits_detail
-        dependencies: [dm.skylight_visits]
+      operator: operators.common.sql_script_executor.SQLScriptExecution
+      pg_hook_con: $ENV
+        directory: /opt/airflow/dags/sql/other/
+        schema_folder: dm
+        table_name: skylight_visits_detail
+      dependencies: [dm.skylight_visits]
 
     end_dag:
       operator: airflow.operators.dummy_operator.DummyOperator

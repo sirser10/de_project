@@ -16,18 +16,19 @@ dds_sap_bu_manager_rls:
   schedule_interval: '@daily'
   tags: [sap, rls]
   tasks:
+
     start_dag:
       operator: airflow.operators.dummy_operator.DummyOperator
+
     dds.sap_bu_manager_rls:
-      operator: airflow.operators.python.PythonOperator
-      python_callable_name: sql_script_execution
-      python_callable_file: /opt/airflow/dags/operators/common/pg_operator.py
-      op_kwargs:
-        pg_hook_con: $ENV
+      operator: operators.common.sql_script_executor.SQLScriptExecution
+      pg_hook_con: $ENV
+      read_sql_cfg:
         directory: /opt/airflow/dags/sql/other/
         schema_folder: dds
         table_name: sap_bu_manager_rls
       dependencies: [start_dag]
+      
     end_dag:
       operator: airflow.operators.dummy_operator.DummyOperator
       task_id: end_dag
